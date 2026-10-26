@@ -34,6 +34,7 @@ let screen = document.body.dataset.start==='tracker'?'tracker':'home', drawer = 
 let viewKm=null,followTrain=true;
 let profile = [], waypoints = [], mapObjects = [], phoneMap = false, catalog = {}, watchId = null, lastPosition = null;
 let sourceMap = null;
+let gpsStatus = 'off', gpsMessage = '';
 let pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); pwaInstallPrompt = event; });
 window.addEventListener('appinstalled', () => { pwaInstallPrompt = null; });
@@ -204,7 +205,9 @@ function drawTracker(){
   const overlay=sw.running?`<div class="stopwatch-overlay"><button data-action="stopwatch-pause" id="stopwatch-display">00:00:00</button><button data-action="stopwatch-reset">СБРОС</button></div>`:'';
   const lengthMode=state.tracker.lengthMode||0;
   const lengthOverlay=lengthMode?`<div class="length-overlay"><span>${lengthMode===1?'Поезд':'Локомотив'}</span><button data-action="length-down">−</button><strong>${lengthMode===1?state.tracker.trainLength:state.tracker.locoLength}</strong><button data-action="length-up">+</button></div>`:'';
-  app.innerHTML=`<div class="tracker-wrap"><div class="tracker"><div class="tracker-head"><button class="coord" data-action="coordinate-view" title="Переключить координаты">${position}</button><button class="gps ${state.tracker.gps?'gps-active':''}" data-action="gps" title="GPS"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.62 1 17.28 6.67 15.16 8.79 13.04 6.67 11.62 8.09 13.95 10.41 12.79 11.58 13.24 12.04C14.17 11.61 15.31 11.77 16.07 12.54L12.54 16.07C11.77 15.31 11.61 14.17 12.04 13.24L11.58 12.79 10.41 13.95 8.09 11.62 6.67 13.04 8.79 15.16 6.67 17.28 1 11.62 3.14 9.5 5.26 11.62 6.67 10.21 3.84 7.38C3.06 6.6 3.06 5.33 3.84 4.55L4.55 3.84C5.33 3.06 6.6 3.06 7.38 3.84L10.21 6.67 11.62 5.26 9.5 3.14 11.62 1M18 14A4 4 0 0 1 14 18V16A2 2 0 0 0 16 14H18M22 14A8 8 0 0 1 14 22V20A6 6 0 0 0 20 14H22Z"/></svg></button><button data-action="toggle-k">К 1</button><button data-action="toggle-way">П ${state.tracker.way}</button><button data-action="toggle-even">${state.tracker.even?'ЧЕТ':'НЕЧЕТ'}</button><button class="clock" data-action="stopwatch" id="tracker-clock"></button></div><canvas class="tracker-canvas" id="profile-canvas"></canvas><button class="train-target" data-action="length-cycle" aria-label="Длина поезда и локомотива"></button><button class="tracker-back" data-action="home">‹</button>${followTrain?"":`<button class="tracker-center" data-action="center-train" aria-label="Центрировать на поезде" title="Центрировать на поезде">◎</button>`}<div class="tracker-bottom"><button class="icon" data-action="stations">▤</button><button data-action="scale-down">−</button><span>${state.tracker.scale}</span><button data-action="scale-up">+</button><button data-action="position">${nextLightDistance()} м</button><span class="spacer"></span><button data-action="speed">V ${state.tracker.speed==null?'null':state.tracker.speedPrecise?state.tracker.speed.toFixed(2):Math.round(state.tracker.speed)}</button><button data-action="position">Уч ${state.tracker.sector}</button><button class="icon" data-action="tracker-settings" title="Настройки">⚙</button></div>${lengthOverlay}${overlay}</div>${modal?drawModal():''}</div>`;
+  const gpsLabel=gpsMessage||({off:'GPS выключен. Нажмите для включения',searching:'Поиск координат',fixed:'Координаты получены',outside:'Координаты вне карты',error:'Ошибка GPS'}[gpsStatus]);
+  const gpsNotice=gpsMessage?`<div class="gps-notice gps-notice-${gpsStatus}" role="status">${esc(gpsMessage)}</div>`:'';
+  app.innerHTML=`<div class="tracker-wrap"><div class="tracker"><div class="tracker-head"><button class="coord" data-action="coordinate-view" title="Переключить координаты">${position}</button><button class="gps gps-${gpsStatus}" data-action="gps" title="${esc(gpsLabel)}" aria-label="${esc(gpsLabel)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.62 1 17.28 6.67 15.16 8.79 13.04 6.67 11.62 8.09 13.95 10.41 12.79 11.58 13.24 12.04C14.17 11.61 15.31 11.77 16.07 12.54L12.54 16.07C11.77 15.31 11.61 14.17 12.04 13.24L11.58 12.79 10.41 13.95 8.09 11.62 6.67 13.04 8.79 15.16 6.67 17.28 1 11.62 3.14 9.5 5.26 11.62 6.67 10.21 3.84 7.38C3.06 6.6 3.06 5.33 3.84 4.55L4.55 3.84C5.33 3.06 6.6 3.06 7.38 3.84L10.21 6.67 11.62 5.26 9.5 3.14 11.62 1M18 14A4 4 0 0 1 14 18V16A2 2 0 0 0 16 14H18M22 14A8 8 0 0 1 14 22V20A6 6 0 0 0 20 14H22Z"/></svg></button><button data-action="toggle-k">К 1</button><button data-action="toggle-way">П ${state.tracker.way}</button><button data-action="toggle-even">${state.tracker.even?'ЧЕТ':'НЕЧЕТ'}</button><button class="clock" data-action="stopwatch" id="tracker-clock"></button></div><canvas class="tracker-canvas" id="profile-canvas"></canvas>${gpsNotice}<button class="train-target" data-action="length-cycle" aria-label="Длина поезда и локомотива"></button><button class="tracker-back" data-action="home">‹</button>${followTrain?"":`<button class="tracker-center" data-action="center-train" aria-label="Центрировать на поезде" title="Центрировать на поезде">◎</button>`}<div class="tracker-bottom"><button class="icon" data-action="stations">▤</button><button data-action="scale-down">−</button><span>${state.tracker.scale}</span><button data-action="scale-up">+</button><button data-action="position">${nextLightDistance()} м</button><span class="spacer"></span><button data-action="speed">V ${state.tracker.speed==null?'null':state.tracker.speedPrecise?state.tracker.speed.toFixed(2):Math.round(state.tracker.speed)}</button><button data-action="position">Уч ${state.tracker.sector}</button><button class="icon" data-action="tracker-settings" title="Настройки">⚙</button></div>${lengthOverlay}${overlay}</div>${modal?drawModal():''}</div>`;
   if(sourceMap){
     const category=document.createElement('button');category.dataset.action='source-category';category.className='source-category-button';category.title='Категория поезда';category.textContent=`🚆 ${sourceMap.categories[state.tracker.trainCategory]||'Грузовой'}`;
     document.querySelector('.tracker-head [data-action="toggle-k"]').after(category);
@@ -549,7 +552,9 @@ function recordStationTimes(previous, match, timestamp){
   state.stations.sort((a,b)=>num(a.km)-num(b.km));
 }
 function gpsUpdate(position){
-  const match=projectGPS(position);if(!match)return;
+  const match=projectGPS(position);
+  if(!match){gpsStatus='outside';gpsMessage='Координаты получены, но путь рядом не найден на карте';if(screen==='tracker')drawTracker();return;}
+  gpsStatus='fixed';gpsMessage='';
   const timestamp=position.timestamp||Date.now();
   if(lastPosition && position.coords.speed==null){const dt=(timestamp-lastPosition.time)/1000,dm=distanceMeters(lastPosition,position.coords);if(dt>0&&dt<60)state.tracker.speed=Math.min(250,dm/dt*3.6)}
   else if(position.coords.speed!=null)state.tracker.speed=position.coords.speed*3.6;
@@ -558,11 +563,20 @@ function gpsUpdate(position){
   lastPosition={lat:position.coords.latitude,lon:position.coords.longitude,time:timestamp,km:match.km,sector:match.sector,track:currentTrack()};save();if(screen==='tracker')drawTracker();
 }
 function toggleGPS(){
-  if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;state.tracker.gps=false;save();drawTracker();return;}
-  if(!navigator.geolocation){alert('Геолокация в этом браузере недоступна');return;}
+  if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;state.tracker.gps=false;gpsStatus='off';gpsMessage='';lastPosition=null;save();drawTracker();return;}
+  if(!window.isSecureContext||!navigator.geolocation){gpsStatus='error';gpsMessage='Геолокация недоступна: откройте сайт через HTTPS в браузере телефона';drawTracker();return;}
   armSpeedAlertAudio();
-  watchId=navigator.geolocation.watchPosition(gpsUpdate,e=>{state.tracker.gps=false;save();drawTracker();alert(`GPS: ${e.message}`)},{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
-  state.tracker.gps=true;save();drawTracker();
+  gpsStatus='searching';gpsMessage='Поиск координат…';state.tracker.gps=true;save();drawTracker();
+  try{
+    watchId=navigator.geolocation.watchPosition(gpsUpdate,error=>{
+      if(watchId!=null)navigator.geolocation.clearWatch(watchId);
+      watchId=null;state.tracker.gps=false;lastPosition=null;gpsStatus='error';
+      gpsMessage=error.code===1?'Нет доступа к местоположению. Разрешите его для сайта в Opera и нажмите спутник снова':error.code===2?'Телефон не смог определить координаты. Проверьте GPS и нажмите спутник снова':'Координаты не получены за 20 секунд. Нажмите спутник для повтора';
+      save();if(screen==='tracker')drawTracker();
+    },{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+  }catch{
+    watchId=null;state.tracker.gps=false;gpsStatus='error';gpsMessage='Браузер не смог запустить геолокацию. Проверьте разрешения Opera';save();drawTracker();
+  }
 }
 function navigate(target){modal=null;drawer=false;screen=target;render();}
 function openModal(type,extra={}){modal={type,...extra};if(screen==='list')drawList();else if(screen==='tracker')drawTracker();else if(screen==='day')drawDay();else if(screen==='settings')drawSettings();else drawHome();}
