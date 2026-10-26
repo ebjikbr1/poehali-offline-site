@@ -21,7 +21,7 @@ data = {
     "map": json.loads(read("data/phone-map.json")),
     "speeds": json.loads(read("data/skorostya-map.json")),
     "catalog": {name: json.loads(read(f"data/catalog/{name}.json")) for name in catalog_names},
-    "seed": json.loads(read("user-backup/seed.json")),
+    "seed": None,
 }
 payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 payload = payload.replace("<", "\\u003c").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
