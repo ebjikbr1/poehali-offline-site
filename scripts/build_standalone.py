@@ -31,6 +31,7 @@ app = app.replace("import {calculateFuelNorm} from './fuel.js';\n", "", 1)
 app = app.replace("import {calculateBrakes,gradients,axlePressures} from './brakes.js';\n", "", 1)
 app = app.replace("import {resolveSpeedSegments} from './speed-map.js';\n", "", 1)
 app = app.replace("import {sourcePage,sourceCoordinateSpeeds} from './source-map.js';\n", "", 1)
+app = app.replace("import {brakesForDirection} from './brake-map.js';\n", "", 1)
 start = app.rfind("Promise.all([")
 end = app.find("]).then(([p,w,entries,seed,map,speeds])=>{", start)
 if start < 0 or end < 0:
@@ -44,6 +45,7 @@ script = "\n".join([
     "return {calculateBrakes,gradients,axlePressures};})();",
     module_body("speed-map.js"),
     module_body("source-map.js"),
+    module_body("brake-map.js"),
     app,
 ])
 html = """<!doctype html>

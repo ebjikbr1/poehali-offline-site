@@ -12,6 +12,12 @@ test('offline cache includes every file needed at installation',()=>{
   for(const file of files)assert.ok(existsSync(resolve(root,file)),`Missing cached file: ${file}`);
   assert.ok(files.includes('poehali.html'));
   assert.ok(files.includes('poehali.webmanifest'));
+  const manifest=JSON.parse(readFileSync(resolve(root,'poehali.webmanifest'),'utf8'));
+  for(const size of ['192x192','512x512']){
+    const icon=manifest.icons.find(item=>item.sizes===size&&item.type==='image/png');
+    assert.ok(icon,`Missing install icon ${size}`);
+    assert.ok(files.includes(icon.src),`Install icon ${size} is not cached`);
+  }
   const standalone=readFileSync(resolve(root,'poehali.html'),'utf8');
   assert.match(standalone,/serviceWorker\.register\('\.\/sw\.js'\)/);
 });

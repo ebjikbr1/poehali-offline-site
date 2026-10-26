@@ -2,6 +2,7 @@ import {calculateFuelNorm} from './fuel.js';
 import {calculateBrakes,gradients,axlePressures} from './brakes.js';
 import {resolveSpeedSegments} from './speed-map.js';
 import {sourcePage,sourceCoordinateSpeeds} from './source-map.js';
+import {brakesForDirection} from './brake-map.js';
 const STORAGE_KEY = 'trainnote-html-v1';
 let storedState = null;
 try { storedState = localStorage.getItem(STORAGE_KEY); } catch {}
@@ -33,6 +34,9 @@ let screen = document.body.dataset.start==='tracker'?'tracker':'home', drawer = 
 let viewKm=null,followTrain=true;
 let profile = [], waypoints = [], mapObjects = [], phoneMap = false, catalog = {}, watchId = null, lastPosition = null;
 let sourceMap = null;
+let pwaInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); pwaInstallPrompt = event; });
+window.addEventListener('appinstalled', () => { pwaInstallPrompt = null; });
 const speedSegmentCache=new Map();
 const approachedSpeedChanges = new Set(), enteredSpeedChanges = new Set();
 let speedFlash = null, speedAlertAudio = null;
@@ -102,6 +106,7 @@ function drawTrainModal(){
     </div><footer><button class="quiet" type="button" data-action="close-modal">Отмена</button><button class="action">Сохранить</button></footer></form></div>`;
 }
 function drawModal(){
+  if(modal.type==='install-pwa-help')return `<div class="modal-shade" data-action="close-modal"><div class="modal"><header>Установка «Поехали»</header><div class="body"><p>Откройте страницу в браузере телефона и выберите в его меню «Установить приложение» или «Добавить на главный экран».</p><p>После первого открытия с сетью данные сохранятся для работы без интернета.</p></div><footer><button class="quiet" data-action="close-modal">Закрыть</button></footer></div></div>`;
   if(modal.type==='source-route'){
     const routes=Object.entries(sourceMap?.routes||{}).map(([id,route])=>{
       const direction=route.tracks['2']?.freight?.direction;
@@ -116,16 +121,16 @@ function drawModal(){
   }
   if(modal.type==='source-brake'){
     const b=modal.brake;
-    return `<div class="modal-shade" data-action="close-modal"><div class="modal"><header>Проба тормозов</header><div class="body"><p>${esc(b.segment)}</p><p>${esc(b.location)} · ${esc(b.speed_kmh)} км/ч · ${esc(b.distance_m)} м</p><p>${esc(sourceMap.categories[b.train_kind]||b.train_kind)} · путь ${esc(b.track)}</p></div><footer><button class="quiet" data-action="close-modal">Закрыть</button></footer></div></div>`;
+    return `<div class="modal-shade" data-action="close-modal"><div class="modal"><header>Проба тормозов</header><div class="body"><p>${esc(b.segment)}</p><p>${esc(b.location)} · ${esc(b.speed_kmh)} км/ч · ${esc(b.distance_m)} м</p><p>${esc(sourceMap.categories[b.train_kind]||b.train_kind)} · ${b.direction==='even'?'чётное':'нечётное'} направление</p></div><footer><button class="quiet" data-action="close-modal">Закрыть</button></footer></div></div>`;
   }
   if(modal.type==='source-brake-list'){
     const routeId=sourceRouteAt(state.tracker.km*1000+num(state.tracker.offset))||state.tracker.route;
     const route=sourceMap.routes[routeId];
-    const items=route.brakes.filter(b=>Number(b.track)===Number(state.tracker.way)&&b.train_kind===state.tracker.trainCategory);
-    const extra=['nizh-yurty','yurty-nizh'].includes(routeId)?sourceMap.unmappedBrakes.filter(b=>Number(b.track)===Number(state.tracker.way)&&b.train_kind===state.tracker.trainCategory):[];
+    const items=brakesForDirection(route.brakes,state.tracker.even,state.tracker.trainCategory);
+    const extra=['nizh-yurty','yurty-nizh'].includes(routeId)?brakesForDirection(sourceMap.unmappedBrakes,state.tracker.even,state.tracker.trainCategory):[];
     const rows=items.map(b=>`<button class="source-choice" data-action="source-brake-detail" data-id="${esc(b.record_id)}">${esc(b.segment)} · ${esc(b.location)} · ${esc(b.speed_kmh)} км/ч · ${esc(b.distance_m)} м</button>`).join('');
     const unplaced=extra.map(b=>`<button class="source-choice" data-action="source-brake-detail" data-id="${esc(b.record_id)}">Без привязки: ${esc(b.segment)} · ${esc(b.location)} · ${esc(b.speed_kmh)} км/ч</button>`).join('');
-    return `<div class="modal-shade" data-action="close-modal"><div class="modal"><header>Пробы тормозов</header><div class="body source-choice-list">${rows||'<p>Для этого пути и категории записей нет</p>'}${unplaced?`<p>Записи вне координат участка в источнике:</p>${unplaced}`:''}</div><footer><button class="quiet" data-action="close-modal">Закрыть</button></footer></div></div>`;
+    return `<div class="modal-shade" data-action="close-modal"><div class="modal"><header>Пробы тормозов</header><div class="body source-choice-list">${rows||'<p>Для этого направления и категории записей нет</p>'}${unplaced?`<p>Записи вне координат участка в источнике:</p>${unplaced}`:''}</div><footer><button class="quiet" data-action="close-modal">Закрыть</button></footer></div></div>`;
   }
   if(modal.type==='day')return `<div class="modal-shade" data-action="close-modal"><form class="modal" data-form="day"><header>${modal.id?'Изменить день':'Новый рабочий день'}</header><div class="body">${field('Дата','date',modal.value?.date||today(),'date','required')}${field('Явка','signOn',modal.value?.signOn||localDatetime(),'datetime-local','required')}${field('Сдача','signOff',modal.value?.signOff||localDatetime(),'datetime-local','required')}${field('Норма часов','norm',modal.value?.norm||0,'number','min="0" step="0.01"')}</div><footer><button class="quiet" type="button" data-action="close-modal">Отмена</button><button class="action">Сохранить</button></footer></form></div>`;
   if(modal.type==='train')return drawTrainModal();
@@ -154,11 +159,11 @@ function drawSettings(){
   else if(settingsPage==='tariff')body=`<form data-form="settings">${settingsInput('Тарифная ставка','hourlyRate','руб.')}${settingsInput('Районный коэффициент','regionFactor','%')}${settingsInput('Северный коэффициент','northernFactor','%')}${settingsInput('Надбавка за класс','classBonus','%')}${settingsInput('Зональная надбавка','zoneBonus','%')}${settingsInput('Бамовская надбавка','bamBonus','%')}${settingsInput('Ком. расходы (за поездку)','tripExpenses','руб.')}<button class="action settings-save">Сохранить</button></form>`;
   else if(settingsPage==='fuel')body=`<label class="settings-row"><span>Ограничить пережог</span><small>Ограничить максимальный пережог/экономию до 10% от нормы</small><input type="checkbox" name="restrictOveruse" ${s.restrictOveruse?'checked':''}></label>`;
   else if(settingsPage==='interface')body=`<label class="settings-row"><span>Норма на сегодня по шестидневке</span><small>Норма на сегодня по пятидневке вместо шестидневки</small><input type="checkbox" name="fiveDayNorm" ${s.fiveDayNorm?'checked':''}></label><form data-form="settings">${settingsInput('Количество секций по умолчанию','defaultSections')}${settingsInput('Количество цифр в счётчике','counterDigits')}${settingsInput('Уклон по умолчанию','defaultGradient','‰')}${settingsInput('Нажатие на 100 т по умолчанию','defaultPressure')}<button class="action settings-save">Сохранить</button></form>`;
-  else if(settingsPage==='tracker')body=`<div class="settings-row"><span>Электронная карта</span><small>${profile.length} отрезков профиля, ${waypoints.length} GPS-точек; скорости по категориям из нового источника</small></div>${settingsRow('Отображение','display')}<label class="settings-row"><span>Сохранять время остановок</span><input type="checkbox" name="stationRecording" ${s.stationRecording?'checked':''}></label><label class="settings-row"><span>Предупреждать о снижении скорости</span><input type="checkbox" name="alertSpeedChanges" ${s.alertSpeedChanges?'checked':''}></label><form data-form="tracker-settings"><label class="settings-row settings-input"><span>Длина поезда, м</span><input name="trainLength" type="number" min="0" step="1" value="${esc(state.tracker.trainLength)}"></label><label class="settings-row settings-input"><span>Расстояние до снижения скорости, м</span><input name="alertBefore" type="number" min="0" step="1" value="${esc(s.alertBefore)}"></label><button class="action settings-save">Сохранить</button></form>${settingsRow('Предупреждения','limits')}${settingsRow('Стоянки','stations')}`;
+  else if(settingsPage==='tracker')body=`<div class="settings-row"><span>Электронная карта</span><small>${profile.length} отрезков профиля, ${waypoints.length} GPS-точек; скорости по категориям из нового источника</small></div>${settingsRow('Отображение','display')}<label class="settings-row"><span>Сохранять время остановок</span><input type="checkbox" name="stationRecording" ${s.stationRecording?'checked':''}></label><label class="settings-row"><span>Предупреждать о снижении скорости</span><input type="checkbox" name="alertSpeedChanges" ${s.alertSpeedChanges?'checked':''}></label><form data-form="tracker-settings"><label class="settings-row settings-input"><span>Длина поезда, м</span><input name="trainLength" type="number" min="0" step="1" value="${esc(state.tracker.trainLength)}"></label><label class="settings-row settings-input"><span>Расстояние до снижения скорости, м</span><input name="alertBefore" type="number" min="0" step="1" value="${esc(s.alertBefore)}"></label><button class="action settings-save">Сохранить</button></form>${settingsRow('Предупреждения','limits')}${settingsRow('Стоянки','stations')}<button class="settings-row" data-action="install-pwa"><span>Скачать и установить PWA</span><small>Установить «Поехали» для работы без интернета</small></button>`;
   else if(settingsPage==='timezone')body=`<div class="settings-row">Часовой пояс устройства: ${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}</div>`;
   else if(settingsPage==='version')body='<div class="settings-row">Блокнот машиниста 0.6.9 · HTML</div>';
   else body='<div class="settings-row">Настройка доступна в установленном приложении.</div>';
-  app.innerHTML=`${header(settingsPage?({'database':'База данных','interface':'Настройки интерфейса','display':'Отображение','fuel':'Расчёт топлива','tariff':'Тарифная ставка и надбавки','tracker':'Настройки "Поехали"'}[settingsPage]||'Настройки'):'Настройки')}<main class="settings-page">${body}</main>`;
+  app.innerHTML=`${header(settingsPage?({'database':'База данных','interface':'Настройки интерфейса','display':'Отображение','fuel':'Расчёт топлива','tariff':'Тарифная ставка и надбавки','tracker':'Настройки "Поехали"'}[settingsPage]||'Настройки'):'Настройки')}<main class="settings-page">${body}</main>${modal?drawModal():''}`;
 }
 function drawCalculator(){
   const v=state.calculator;
@@ -199,7 +204,7 @@ function drawTracker(){
   const overlay=sw.running?`<div class="stopwatch-overlay"><button data-action="stopwatch-pause" id="stopwatch-display">00:00:00</button><button data-action="stopwatch-reset">СБРОС</button></div>`:'';
   const lengthMode=state.tracker.lengthMode||0;
   const lengthOverlay=lengthMode?`<div class="length-overlay"><span>${lengthMode===1?'Поезд':'Локомотив'}</span><button data-action="length-down">−</button><strong>${lengthMode===1?state.tracker.trainLength:state.tracker.locoLength}</strong><button data-action="length-up">+</button></div>`:'';
-  app.innerHTML=`<div class="tracker-wrap"><div class="tracker"><div class="tracker-head"><button class="coord" data-action="coordinate-view" title="Переключить координаты">${position}</button><button class="gps ${state.tracker.gps?'gps-active':''}" data-action="gps" title="GPS"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.62 1 17.28 6.67 15.16 8.79 13.04 6.67 11.62 8.09 13.95 10.41 12.79 11.58 13.24 12.04C14.17 11.61 15.31 11.77 16.07 12.54L12.54 16.07C11.77 15.31 11.61 14.17 12.04 13.24L11.58 12.79 10.41 13.95 8.09 11.62 6.67 13.04 8.79 15.16 6.67 17.28 1 11.62 3.14 9.5 5.26 11.62 6.67 10.21 3.84 7.38C3.06 6.6 3.06 5.33 3.84 4.55L4.55 3.84C5.33 3.06 6.6 3.06 7.38 3.84L10.21 6.67 11.62 5.26 9.5 3.14 11.62 1M18 14A4 4 0 0 1 14 18V16A2 2 0 0 0 16 14H18M22 14A8 8 0 0 1 14 22V20A6 6 0 0 0 20 14H22Z"/></svg></button><button data-action="toggle-k">К 1</button><button data-action="toggle-way">П ${state.tracker.way}</button><button data-action="toggle-even">${state.tracker.even?'ЧЕТ':'НЕЧЕТ'}</button><button class="clock" data-action="stopwatch" id="tracker-clock"></button></div><canvas class="tracker-canvas" id="profile-canvas"></canvas><button class="train-target" data-action="length-cycle" aria-label="Длина поезда и локомотива"></button><button class="tracker-back" data-action="home">‹</button>${followTrain?"":`<button class="tracker-center" data-action="center-train">◎ Центрировать</button>`}<div class="tracker-bottom"><button class="icon" data-action="stations">▤</button><button data-action="scale-down">−</button><span>${state.tracker.scale}</span><button data-action="scale-up">+</button><button data-action="position">${nextLightDistance()} м</button><span class="spacer"></span><button data-action="speed">V ${state.tracker.speed==null?'null':state.tracker.speedPrecise?state.tracker.speed.toFixed(2):Math.round(state.tracker.speed)}</button><button data-action="position">Уч ${state.tracker.sector}</button><button class="icon" data-action="tracker-settings" title="Настройки">⚙</button></div>${lengthOverlay}${overlay}</div>${modal?drawModal():''}</div>`;
+  app.innerHTML=`<div class="tracker-wrap"><div class="tracker"><div class="tracker-head"><button class="coord" data-action="coordinate-view" title="Переключить координаты">${position}</button><button class="gps ${state.tracker.gps?'gps-active':''}" data-action="gps" title="GPS"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.62 1 17.28 6.67 15.16 8.79 13.04 6.67 11.62 8.09 13.95 10.41 12.79 11.58 13.24 12.04C14.17 11.61 15.31 11.77 16.07 12.54L12.54 16.07C11.77 15.31 11.61 14.17 12.04 13.24L11.58 12.79 10.41 13.95 8.09 11.62 6.67 13.04 8.79 15.16 6.67 17.28 1 11.62 3.14 9.5 5.26 11.62 6.67 10.21 3.84 7.38C3.06 6.6 3.06 5.33 3.84 4.55L4.55 3.84C5.33 3.06 6.6 3.06 7.38 3.84L10.21 6.67 11.62 5.26 9.5 3.14 11.62 1M18 14A4 4 0 0 1 14 18V16A2 2 0 0 0 16 14H18M22 14A8 8 0 0 1 14 22V20A6 6 0 0 0 20 14H22Z"/></svg></button><button data-action="toggle-k">К 1</button><button data-action="toggle-way">П ${state.tracker.way}</button><button data-action="toggle-even">${state.tracker.even?'ЧЕТ':'НЕЧЕТ'}</button><button class="clock" data-action="stopwatch" id="tracker-clock"></button></div><canvas class="tracker-canvas" id="profile-canvas"></canvas><button class="train-target" data-action="length-cycle" aria-label="Длина поезда и локомотива"></button><button class="tracker-back" data-action="home">‹</button>${followTrain?"":`<button class="tracker-center" data-action="center-train" aria-label="Центрировать на поезде" title="Центрировать на поезде">◎</button>`}<div class="tracker-bottom"><button class="icon" data-action="stations">▤</button><button data-action="scale-down">−</button><span>${state.tracker.scale}</span><button data-action="scale-up">+</button><button data-action="position">${nextLightDistance()} м</button><span class="spacer"></span><button data-action="speed">V ${state.tracker.speed==null?'null':state.tracker.speedPrecise?state.tracker.speed.toFixed(2):Math.round(state.tracker.speed)}</button><button data-action="position">Уч ${state.tracker.sector}</button><button class="icon" data-action="tracker-settings" title="Настройки">⚙</button></div>${lengthOverlay}${overlay}</div>${modal?drawModal():''}</div>`;
   if(sourceMap){
     const category=document.createElement('button');category.dataset.action='source-category';category.className='source-category-button';category.title='Категория поезда';category.textContent=`🚆 ${sourceMap.categories[state.tracker.trainCategory]||'Грузовой'}`;
     document.querySelector('.tracker-head [data-action="toggle-k"]').after(category);
@@ -212,7 +217,7 @@ function paintProfile(){
   const dpr=devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
   canvas.width=Math.max(1,Math.round(w*dpr));canvas.height=Math.max(1,Math.round(h*dpr));
   const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
-  const axisY=h*.55,bottomY=h*.82,headX=w*.273,pxPerKm=w/9.2;
+  const axisY=h*.55,bottomY=h*.92,headX=w*.273,pxPerKm=w/9.2;
   const km=(viewKm??state.tracker.km)+state.tracker.offset/1000;
   const trainKm=state.tracker.km+state.tracker.offset/1000;
   const direction=state.tracker.even?1:-1;
@@ -355,7 +360,7 @@ function paintProfile(){
       for(const [dy,color] of [[-54,'#a3a91d'],[-44,'#3f8a39'],[-34,'#913b3b']]){ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,axisY+dy,Math.max(3,w*.003),0,Math.PI*2);ctx.fill()}
     }
     const sourceRoute=sourceRouteAt(km*1000,sector,state.tracker.way);
-    const brakeMarkers=(sourceMap?.routes?.[sourceRoute]?.brakes||[]).filter(b=>Number(b.track)===Number(state.tracker.way)&&b.train_kind===state.tracker.trainCategory);
+    const brakeMarkers=brakesForDirection(sourceMap?.routes?.[sourceRoute]?.brakes,state.tracker.even,state.tracker.trainCategory);
     for(const brake of brakeMarkers){
       const coordinate=(brake.km-1)+(brake.picket-1)/10,x=toX(coordinate);
       if(x<0||x>w)continue;
@@ -560,7 +565,7 @@ function toggleGPS(){
   state.tracker.gps=true;save();drawTracker();
 }
 function navigate(target){modal=null;drawer=false;screen=target;render();}
-function openModal(type,extra={}){modal={type,...extra};if(screen==='list')drawList();else if(screen==='tracker')drawTracker();else if(screen==='day')drawDay();else drawHome();}
+function openModal(type,extra={}){modal={type,...extra};if(screen==='list')drawList();else if(screen==='tracker')drawTracker();else if(screen==='day')drawDay();else if(screen==='settings')drawSettings();else drawHome();}
 function exportData(){const blob=new Blob([JSON.stringify({format:'trainnote-html-v1',exportedAt:new Date().toISOString(),data:state},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`trainnote-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 let listReturn='home';
 app.addEventListener('click',async event=>{
@@ -587,6 +592,11 @@ app.addEventListener('click',async event=>{
   if(action==='brakes'){navigate('brakes');return;}
   if(action==='settings'){settingsReturn=screen;settingsPage='';navigate('settings');return;}
   if(action==='tracker-settings'){settingsReturn='tracker';settingsPage='tracker';navigate('settings');return;}
+  if(action==='install-pwa'){
+    if(pwaInstallPrompt){const prompt=pwaInstallPrompt;pwaInstallPrompt=null;prompt.prompt();prompt.userChoice.catch(()=>{});}
+    else openModal('install-pwa-help');
+    return;
+  }
   if(action==='help'){navigate('help');return;}
   if(action==='help-page'){document.getElementById('help-frame').src=`source-assets/assets/${el.dataset.page}.html`;return;}
   if(action==='limits'||action==='stations'){listMode=action;listReturn=screen;navigate('list');return;}
@@ -756,7 +766,7 @@ app.addEventListener('pointerup',event=>{
     const canvas=event.target,point=canvasPoint(event,canvas),w=canvas.clientWidth,h=canvas.clientHeight,axisY=h*.55;
     if(point.y<axisY-90||point.y>axisY-35)return;
     const center=(viewKm??state.tracker.km)+num(state.tracker.offset)/1000,route=sourceRouteAt(center*1000,num(state.tracker.sector),state.tracker.way);
-    const brakes=(sourceMap.routes[route]?.brakes||[]).filter(b=>Number(b.track)===Number(state.tracker.way)&&b.train_kind===state.tracker.trainCategory);
+    const brakes=brakesForDirection(sourceMap.routes[route]?.brakes,state.tracker.even,state.tracker.trainCategory);
     const marker=brakes.find(b=>Math.abs(canvas.clientWidth*.273+(state.tracker.even?1:-1)*((b.km-1)+(b.picket-1)/10-center)*(w/9.2)-point.x)<13);
     if(marker)openModal('source-brake',{brake:marker});
   }
