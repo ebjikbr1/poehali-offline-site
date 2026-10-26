@@ -1,0 +1,9 @@
+user-backup/
+source-apk/
+qa/
+reference/
+source-assets/phone-emap/
+source-assets/assets/data.xml
+source-assets/assets/profile.xml
+preview-*.png
+warnings-preview.png
